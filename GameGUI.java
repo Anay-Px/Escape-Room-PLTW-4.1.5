@@ -6,20 +6,26 @@
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.Image;
 import java.awt.Point;
-import java.awt.Rectangle;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+
+import javax.swing.JComponent;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+
+import javax.imageio.ImageIO;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Random;
 import java.util.Scanner; 
-import javax.imageio.ImageIO;
-import javax.swing.JComponent;
-import javax.swing.JFrame;
-import javax.swing.JOptionPane; 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * A game where a player maneuvers around a gameboard to answer
@@ -61,7 +67,6 @@ public class GameGUI extends JComponent implements KeyListener
   private int goodMove = 1;
   private int offGridVal = 5; // penalty 
   private int hitWallVal = 5;  // penalty 
-  private int correctAns = 10;
   private int wrongAns = 7; // penalty 
   private int score = 0; 
 
@@ -72,9 +77,6 @@ public class GameGUI extends JComponent implements KeyListener
 
   /**
    * Constructor for the GameGUI class.
-   * * Gets the player level and the questions/answers for the game 
-   * from two files on disk. Creates th gameboard with a background image,
-   * walls, prizes, and a player.
    */
   public GameGUI() throws IOException
   {
@@ -84,30 +86,37 @@ public class GameGUI extends JComponent implements KeyListener
   }
 
   /**
-   * Create array of questions and answers from the quiz.txt file.
-   * * @preconditon: The TXT file contains at least playerLevel number of questions.
-   * (It may contain more unused questions.)
-   * * @postconditon: A 2D array is populated with one question and one answer per row.
+   * Create array of questions, answers, and points from the quiz.txt file.
+   * Randomizes the questions so they don't repeat in the same order.
    */
   private void createQuiz() 
   {
-    // Initialize array based on MAX_LEVEL (1 question per level max used)
-    quizData = new String[MAX_LEVEL][2];
+    List<String[]> allQuestions = new ArrayList<>();
     try {
       Scanner scanner = new Scanner(new File("quiz.txt"));
-      int i = 0;
-      while (scanner.hasNextLine() && i < MAX_LEVEL) {
+      while (scanner.hasNextLine()) {
         String line = scanner.nextLine();
-        String[] parts = line.split(":"); // Splits the line at the colon
-        if (parts.length == 2) {
-          quizData[i][0] = parts[0]; // Question
-          quizData[i][1] = parts[1]; // Answer
-          i++;
+        String[] parts = line.split(":"); // Splits at colon: Question:Answer:Points
+        if (parts.length >= 3) {
+          allQuestions.add(parts);
         }
       }
       scanner.close();
     } catch (IOException e) {
       System.err.println("Error reading quiz.txt");
+    }
+
+    // Randomize the questions
+    Collections.shuffle(allQuestions);
+
+    // Initialize array based on MAX_LEVEL (1 question per level max used)
+    // Dimension 3 holds Question, Answer, and Points
+    quizData = new String[MAX_LEVEL][3];
+    
+    for (int i = 0; i < MAX_LEVEL && i < allQuestions.size(); i++) {
+        quizData[i][0] = allQuestions.get(i)[0]; // Question
+        quizData[i][1] = allQuestions.get(i)[1]; // Answer
+        quizData[i][2] = allQuestions.get(i)[2]; // Points
     }
   }
 
@@ -141,8 +150,6 @@ public class GameGUI extends JComponent implements KeyListener
 
   /**
    * Manage the input from the keybard: arrow keys, wasd keys, p, q, and h keys.
-   * Key input is not case sensivite.
-   * * @param e the key that was pressed
    */
   @Override
   public void keyPressed(KeyEvent e)
@@ -154,14 +161,15 @@ public class GameGUI extends JComponent implements KeyListener
           if (currentQuestionIndex < MAX_LEVEL) {
               String question = quizData[currentQuestionIndex][0];
               String correctAnswer = quizData[currentQuestionIndex][1];
+              int questionPoints = Integer.parseInt(quizData[currentQuestionIndex][2].trim()); // Dynamic points
               
-              String answer = askQuestion(question);
+              String answer = askQuestion(question + "\n\n(Worth " + questionPoints + " points)");
               
               // Check if user clicked OK and answer matches (ignoring case/spaces)
               if (answer != null && answer.trim().equalsIgnoreCase(correctAnswer.trim())) {
                   pickupPrize();
-                  score += correctAns;
-                  currentQuestionIndex++; // Move to next question for the next coin
+                  score += questionPoints; // Add dynamic points
+                  currentQuestionIndex++; // Move to next question
                   
                   // Check if that was the last coin
                   boolean allCollected = true;
@@ -173,9 +181,9 @@ public class GameGUI extends JComponent implements KeyListener
                   }
                   
                   if (allCollected) {
-                      showMessage("Correct!\n\nYou picked up the final coin! Press 'Q' to escape the room and see your final score.");
+                      showMessage("Correct! You earned " + questionPoints + " points.\n\nYou picked up the final coin! Press 'Q' to escape the room and see your final score.");
                   } else {
-                      showMessage("Correct! You picked up a coin.\nCurrent Score: " + score);
+                      showMessage("Correct! You earned " + questionPoints + " points.\nCurrent Score: " + score);
                   }
                   
               } else if (answer != null) {
@@ -191,7 +199,6 @@ public class GameGUI extends JComponent implements KeyListener
     // Q key: quit game
     if (e.getKeyCode() == KeyEvent.VK_Q)
     {
-      // Check if all prizes are collected (picked up prizes have width 0)
       boolean allCollected = true;
       for (Rectangle p : prizes) {
           if (p.getWidth() > 0) {
@@ -203,7 +210,6 @@ public class GameGUI extends JComponent implements KeyListener
       if (!allCollected) {
           showMessage("You cannot escape yet! You must collect all the coins first.");
       } else {
-          // Calculate final score by deducting steps
           int finalScore = score - playerSteps;
           showMessage("You escaped!\nBase Score: " + score + "\nSteps Taken: " + playerSteps + "\nFinal Score: " + finalScore);
           
@@ -225,48 +231,44 @@ public class GameGUI extends JComponent implements KeyListener
     if (e.getKeyCode() == KeyEvent.VK_H)
     {
       String msg = "Move player: arrows or WASD keys\n" + 
+      "Jump (2 spaces): Hold SHIFT + arrows\n" +
       "Pickup prize: p\n" +
       "Quit: q\n" +
       "Help: h\n";
       showMessage(msg);
     }
     
+    // Determine distance: Regular move = MOVE, Jump = MOVE * 2
+    int distance = e.isShiftDown() ? MOVE * 2 : MOVE;
+
     // Arrow and WASD keys: moved down, up, left or right
     if (e.getKeyCode() == KeyEvent.VK_DOWN || e.getKeyCode() == KeyEvent.VK_S )
     {
-      score += movePlayer(0, MOVE);
+      score += movePlayer(0, distance);
     }
     if (e.getKeyCode() == KeyEvent.VK_UP || e.getKeyCode() == KeyEvent.VK_W)
     {
-      score += movePlayer(0, -MOVE);
+      score += movePlayer(0, -distance);
     }
     if (e.getKeyCode() == KeyEvent.VK_LEFT || e.getKeyCode() == KeyEvent.VK_A)
     {
-      score += movePlayer(-MOVE, 0);
+      score += movePlayer(-distance, 0);
     }
     if (e.getKeyCode() == KeyEvent.VK_RIGHT || e.getKeyCode() == KeyEvent.VK_D)
     {
-      score += movePlayer(MOVE, 0);
+      score += movePlayer(distance, 0);
     }
   } 
 
-  /**
-   * Manage the key release, checking if the player is at a prize.
-   * * @param e the key that was released
-   */
   @Override
   public void keyReleased(KeyEvent e) 
   { 
     checkForPrize();
   }
 
-  /* override necessary but no action */
   @Override
   public void keyTyped(KeyEvent e) { }
 
-  /**
-  * Add player, prizes, and walls to the gameboard.
-  */
   private void createBoard() throws IOException
   {    
     prizes = new Rectangle[playerLevel];
@@ -280,10 +282,8 @@ public class GameGUI extends JComponent implements KeyListener
     player = ImageIO.read(new File("player.png")); 
     playerQ = ImageIO.read(new File("playerQ.png")); 
     
-    // save player location
     playerLoc = new Point(currX, currY);
 
-    // create the game frame
     frame = new JFrame();
     frame.setTitle("EscapeRoom");
     frame.setSize(WIDTH, HEIGHT);
@@ -295,17 +295,9 @@ public class GameGUI extends JComponent implements KeyListener
 
     checkForPrize();
 
-     showMessage("Welcome to the Escape Room. Press h to learn how to play.");
+    showMessage("Welcome to the Escape Room. Press h to learn how to play.");
   }
 
-  /**
-   * Increment/decrement the player location by the amount designated.
-   * This method checks for bumping into walls and going off the grid,
-   * both of which result in a penalty.
-   * * @param incrx amount to move player in x direction
-   * @param incry amount to move player in y direciton
-   * * @return penaly for hitting a wall or trying to go off the grid, goodMove otherwise
-   */
   private int movePlayer(int incrx, int incry)
   {
       int newX = currX + incrx;
@@ -321,31 +313,27 @@ public class GameGUI extends JComponent implements KeyListener
       // determine if a wall is in the way
       for (Rectangle r: walls)
       {
-        // this rect. location
         int startX =  (int)r.getX();
         int endX  =  (int)r.getX() + (int)r.getWidth();
         int startY =  (int)r.getY();
         int endY = (int) r.getY() + (int)r.getHeight();
 
-        // moving RIGHT, check to the right
+        // The path-checking logic natively blocks jumping *through* walls
         if ((incrx > 0) && (currX <= startX) && (startX <= newX) && (currY >= startY) && (currY <= endY))
         {
           showMessage("A wall is in the way.");
           return -hitWallVal;
         }
-        // moving LEFT, check to the left
         else if ((incrx < 0) && (currX >= startX) && (startX >= newX) && (currY >= startY) && (currY <= endY))
         {
           showMessage("A wall is in the way.");
           return -hitWallVal;
         }
-        // moving DOWN check below
         else if ((incry > 0) && (currY <= startY && startY <= newY && currX >= startX && currX <= endX))
         {
           showMessage("A wall is in the way.");
           return -hitWallVal;
         }
-        // moving UP check above
         else if ((incry < 0) && (currY >= startY) && (startY >= newY) && (currX >= startX) && (currX <= endX))
         {
           showMessage("A wall is in the way.");
@@ -361,30 +349,16 @@ public class GameGUI extends JComponent implements KeyListener
       return goodMove;
   }
 
-  /**
-   * Displays a dialog with a simple message and an OK button
-   * * @param str the message to show
-   */
   private void showMessage(String str)
   {
     JOptionPane.showMessageDialog(frame,str );
   }
 
-  /**
-   * Display a dialog that asks a question and waits for an answer
-   *
-   * @param q the question to display
-   *
-   * @return the text the user entered, null otherwise
-   */
   private String askQuestion(String q)
   {
-    // \n was parsed as a literal by the split method, replace with escape sequence
-    return JOptionPane.showInputDialog(q.replace("\\n","\n") , JOptionPane.OK_OPTION);  }
+    return JOptionPane.showInputDialog(q.replace("\\n","\n") , JOptionPane.OK_OPTION);  
+  }
 
-  /**
-   * If there's a prize at the location, set atPrize to true and change player image
-   */
   private void checkForPrize()
   {
     double px = playerLoc.getX();
@@ -402,9 +376,6 @@ public class GameGUI extends JComponent implements KeyListener
     atPrize = false;
   }
 
-  /**
-   * Pickup a prize and score points. If no prize is in that location, it results in a penalty.
-   */
   private void  pickupPrize()
   {
     double px = playerLoc.getX();
@@ -412,7 +383,6 @@ public class GameGUI extends JComponent implements KeyListener
 
     for (Rectangle p: prizes)
     {
-      // if location has a prize, pick it up
       if (p.getWidth() > 0 && p.contains(px, py))
       {
         p.setSize(0,0);
@@ -422,9 +392,6 @@ public class GameGUI extends JComponent implements KeyListener
     }
   }
 
- /**
-  * End the game, update and save the player level.
-  */
   private void endGame() 
   {
     try {
@@ -438,9 +405,6 @@ public class GameGUI extends JComponent implements KeyListener
     frame.dispose();
   }
 
-  /**
-   * Add randomly placed prizes to be picked up.
-   */
   private void createPrizes()
   {
     int s = SPACE_SIZE; 
@@ -451,7 +415,6 @@ public class GameGUI extends JComponent implements KeyListener
       int w = rand.nextInt(GRID_W);
       Rectangle r = new Rectangle((w*s + 15),(h*s + 15), 15, 15);
 
-       // get a rect. without a prize already there
        for (Rectangle p : prizes) {
         while (p != null && p.equals(r)) {
           h = rand.nextInt(GRID_H);
@@ -463,10 +426,6 @@ public class GameGUI extends JComponent implements KeyListener
     }
   }
 
-  /**
-   * Add walls to the board in random locations. Multiple walls may
-   * be in the same locaiton.
-   */
   private void createWalls()
   {
      int s = SPACE_SIZE; 
@@ -493,21 +452,15 @@ public class GameGUI extends JComponent implements KeyListener
     }
   }
 
-  /* * Manage board elements with graphics buffer g.
-   * For internal use - do not call directly, use repaint instead.
-   */
   public void paintComponent(Graphics g)
   {
     super.paintComponent(g);
     Graphics2D g2 = (Graphics2D)g;
 
-    // draw grid
     g.drawImage(bgImage, 0, 0, null);
 
-    // add prizes
     for (Rectangle p : prizes)
     {
-      // pickedup prizes are 0 size so don't render
       if (p.getWidth() > 0) 
       {
       int px = (int)p.getX();
@@ -516,14 +469,12 @@ public class GameGUI extends JComponent implements KeyListener
       }
     }
 
-    // add walls
     for (Rectangle r : walls) 
     {
       g2.setPaint(Color.BLACK);
       g2.fill(r);
     }
    
-    // draw player, saving its location
     if(atPrize)
     {
       g.drawImage(playerQ, currX, currY, 40,40, null);
