@@ -1,0 +1,5 @@
+What is the result of the expression 5 / 2 when both are int in Java?\nA) 2.5\nB) 2\nC) 2.0\nD) Error:B
+Which of the following is NOT a primitive data type in Java?\nA) int\nB) boolean\nC) String\nD) double:C
+What keyword is used to inherit a class in Java?\nA) implements\nB) inherits\nC) extends\nD) super:C
+What is the worst-case time complexity of accessing an element in an array by its index?\nA) O(1)\nB) O(n)\nC) O(log n)\nD) O(n^2):A
+Which operator is used to check if two object reference variables point to the exact same memory location?\nA) .equals()\nB) ==\nC) =\nD) .compareTo():B
